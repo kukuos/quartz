@@ -55,6 +55,11 @@ $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 $OutputEncoding = [Text.Encoding]::UTF8
 
+# 笔记内容与视频分别走 Git 和 SSH 两条通道，各自是否有变化要分开记，
+# 两者都没变才真的不用重新构建。
+$script:contentChanged = $false
+$script:videoUploaded  = $false
+
 # ---------- 输出辅助 ----------
 function Write-Step  { param($m) Write-Host "`n▶ $m" -ForegroundColor Cyan }
 function Write-Ok    { param($m) Write-Host "  ✓ $m" -ForegroundColor Green }
@@ -422,14 +427,15 @@ try {
     # core.quotepath=false：让中文文件名正常显示，而不是八进制转义
     $staged = & git -c core.quotepath=false diff --cached --name-status -- content
     if (-not $staged) {
-        Write-Ok '内容没有变化，无需发布'
-        Write-Host ''
-        Write-Host "  网站保持不变：$SiteUrl" -ForegroundColor Cyan
-        Write-Host ''
-        Wait-Exit
-        exit 0
+        # 这里不能直接退出：视频不走 Git，笔记没改动但换了视频的情况依然存在，
+        # 后面还要检查视频是否需要上传。
+        Write-Ok '笔记内容没有变化'
+        $script:contentChanged = $false
+    } else {
+        $script:contentChanged = $true
     }
 
+    if ($script:contentChanged) {
     Write-Host ''
     Write-Host '  本次变更：' -ForegroundColor Cyan
     $added = 0; $modified = 0; $deleted = 0
@@ -468,6 +474,7 @@ try {
         Abort 'push 失败'
     }
     Write-Ok '已推送到 GitHub'
+    }   # end if ($script:contentChanged)
 }
 finally {
     Pop-Location
@@ -509,7 +516,19 @@ if ($videos.Count -gt 0 -and -not $NoDeploy) {
         }
         & ssh -i $SshKey $SshTarget "chown -R www:www '$MediaDir'; chmod 755 '$MediaDir'; find '$MediaDir' -type f -exec chmod 644 {} +"
         Write-Ok "已上传 $($toUpload.Count) 个视频"
+        $script:videoUploaded = $true
     }
+}
+
+# 笔记和视频都没变化时就没必要重新构建了
+if (-not $script:contentChanged -and -not $script:videoUploaded) {
+    Write-Host ''
+    Write-Ok '没有任何变化，无需发布'
+    Write-Host ''
+    Write-Host "  网站保持不变：$SiteUrl" -ForegroundColor Cyan
+    Write-Host ''
+    Wait-Exit
+    exit 0
 }
 
 # ===================== 8. 触发服务器部署 =====================

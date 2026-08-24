@@ -127,6 +127,34 @@ echo "$CT" | grep -qi "image/png" \
     && { green "  ✓ 图片 MIME 正确"; PASS=$((PASS+1)); } \
     || { red "  ✗ 图片 MIME 异常：${CT}"; FAIL=$((FAIL+1)); }
 
+# 视频不进 Git，单独存放在媒体目录由 Nginx 映射，这里确认那条链路是通的。
+# 文件名从服务器本地取，避免中文在传输途中被转码成 GBK 导致误判。
+MEDIA_DIR="/www/wwwroot/notes.231652.xyz-media"
+if compgen -G "${MEDIA_DIR}/*" > /dev/null 2>&1; then
+    VN=$(ls -1 "$MEDIA_DIR" | head -1)
+    VC=$(code "${SITE}/${VN}")
+    if [ "$VC" = "200" ]; then
+        green "  ✓ 视频可访问：${VN}"; PASS=$((PASS+1))
+    else
+        red "  ✗ 视频返回 ${VC}：${VN}"; FAIL=$((FAIL+1))
+    fi
+    # 206 表示支持按范围取流，播放器才能拖动进度条
+    RC=$(curl -s -o /dev/null -w '%{http_code}' -m 15 -r 0-100 "${SITE}/${VN}")
+    if [ "$RC" = "206" ]; then
+        green "  ✓ 视频支持 Range 请求（可拖动进度条）"; PASS=$((PASS+1))
+    else
+        yellow "  ! 视频 Range 请求返回 ${RC}（预期 206）"; WARN=$((WARN+1))
+    fi
+    # 视频不应出现在站点目录里，否则说明又被同步进 Git 了
+    if find /www/wwwroot/notes.231652.xyz -name '*.mp4' -o -name '*.webm' 2>/dev/null | grep -q .; then
+        red "  ✗ 站点目录里出现了视频文件，说明视频又进了 Git"; FAIL=$((FAIL+1))
+    else
+        green "  ✓ 视频未混入站点目录（Git 保持轻量）"; PASS=$((PASS+1))
+    fi
+else
+    yellow "  ! 媒体目录为空，跳过视频检查"; WARN=$((WARN+1))
+fi
+
 # ---------------- 测试 5：中文 ----------------
 title "测试 5：中文支持"
 
