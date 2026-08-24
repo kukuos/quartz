@@ -76,8 +76,12 @@ else
     green "  ✓ 首页无私人笔记内容"; PASS=$((PASS+1))
 fi
 
-for p in "/test-private" "/Test Private" "/私人测试"; do
-    C=$(code "${SITE}${p}")
+# 路径里的空格必须写成 %20，否则 curl 会直接报错返回 000，
+# 那是脚本自身的问题，不代表页面泄露。
+for p in "/test-private" "/Test%20Private" "/test private" "/私人测试"; do
+    # 把可能残留的空格转成 %20
+    ep="${p// /%20}"
+    C=$(code "${SITE}${ep}")
     if [ "$C" = "404" ] || [ "$C" = "301" ]; then
         green "  ✓ ${p} 不可访问（${C}）"; PASS=$((PASS+1))
     else
@@ -242,8 +246,19 @@ if [ -n "$CSS" ]; then
 fi
 
 echo "$H" | grep -qi "cache-control: no-cache" \
-    && { green "  ✓ HTML 不缓存，发布后立即可见"; PASS=$((PASS+1)); } \
-    || { yellow "  ! HTML 缓存策略非预期"; WARN=$((WARN+1)); }
+    && { green "  ✓ 首页不缓存，发布后立即可见"; PASS=$((PASS+1)); } \
+    || { yellow "  ! 首页缓存策略非预期"; WARN=$((WARN+1)); }
+
+# 内页 URI 不以 .html 结尾，需单独确认它也没被缓存
+head_of "${SITE}/test" | grep -qi "cache-control: no-cache" \
+    && { green "  ✓ 内页不缓存"; PASS=$((PASS+1)); } \
+    || { yellow "  ! 内页缓存策略非预期"; WARN=$((WARN+1)); }
+
+# nginx 的 add_header 不会从父块继承到写了 add_header 的子块，
+# 这里确认加了缓存头之后安全头没有被弄丢
+head_of "${SITE}/test" | grep -qi "x-content-type-options" \
+    && { green "  ✓ 内页安全头未因缓存配置丢失"; PASS=$((PASS+1)); } \
+    || { red "  ✗ 内页安全头丢失（add_header 继承被打断）"; FAIL=$((FAIL+1)); }
 
 curl -s -I -m 15 -H "Accept-Encoding: gzip" "${SITE}/" | grep -qi "content-encoding: gzip" \
     && { green "  ✓ gzip 压缩已启用"; PASS=$((PASS+1)); } \
