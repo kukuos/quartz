@@ -93,6 +93,18 @@ else
     git --no-pager log --oneline "${BEFORE_SHA}..${AFTER_SHA}" | head -10 | tee -a "$LOG_FILE"
 fi
 
+# 本脚本如果在这次更新里被改动，当前进程执行的仍是磁盘上的旧内容，
+# 因此换用新版本重新跑一遍，避免「改了部署脚本却要等下一次才生效」。
+# DEPLOY_REEXEC 防止无限重启；重启前必须释放并关闭锁，否则新进程拿不到。
+if [ "${DEPLOY_REEXEC:-0}" != "1" ] && [ "$BEFORE_SHA" != "$AFTER_SHA" ] \
+   && ! git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- deploy.sh; then
+    log "  deploy.sh 自身已更新，改用新版本重新执行"
+    flock -u 200 || true
+    exec 200>&-
+    export DEPLOY_REEXEC=1
+    exec bash "${APP_DIR}/deploy.sh"
+fi
+
 # ---------------- 2. 依赖 ----------------
 log "[2/6] 检查依赖"
 

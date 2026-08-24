@@ -1,5 +1,5 @@
 import { i18n } from "../i18n"
-import { FullSlug, getFileExtension, joinSegments, pathToRoot } from "../util/path"
+import { FullSlug, getFileExtension, joinSegments, pathToRoot, simplifySlug } from "../util/path"
 import { CSSResourceToStyleElement, JSResourceToScriptElement } from "../util/resources"
 import { googleFontHref, googleFontSubsetHref } from "../util/theme"
 import { QuartzComponent, QuartzComponentConstructor, QuartzComponentProps } from "./types"
@@ -30,6 +30,15 @@ export default (() => {
     // Url of current page
     const socialUrl =
       fileData.slug === "404" ? url.toString() : joinSegments(url.toString(), fileData.slug!)
+
+    // 规范链接地址。与 socialUrl 的区别：首页的 slug 是 "index"，
+    // 直接拼接会得到 /index，而首页的正式地址应当是 /。
+    // simplifySlug 会把 "index" 和 "某目录/index" 归一化成 "/" 和 "某目录"。
+    const simplified = simplifySlug(fileData.slug!)
+    const canonicalUrl =
+      fileData.slug === "404" || simplified === "/"
+        ? url.toString()
+        : joinSegments(url.toString(), simplified)
 
     const usesCustomOgImage = ctx.cfg.plugins.emitters.some((e) => e.name === "CustomOgImages")
     const ogImageDefaultPath = `https://${cfg.baseUrl}/static/og-image.png`
@@ -88,7 +97,7 @@ export default (() => {
             <meta property="twitter:url" content={socialUrl}></meta>
             {/* 规范链接：告诉搜索引擎本页的唯一正式地址，避免大小写、
                 尾部斜杠等变体被当成重复内容。upstream 尚未内置。 */}
-            <link rel="canonical" href={socialUrl} />
+            <link rel="canonical" href={canonicalUrl} />
           </>
         )}
 
