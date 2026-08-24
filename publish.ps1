@@ -45,6 +45,9 @@ $SshKey       = 'C:\Users\Administrator\.ssh\root-tw_id_ed25519'
 $SshTarget    = 'root@43.212.212.75'
 $RemoteDeploy = '/www/app/quartz/deploy.sh'
 $SiteUrl      = 'https://notes.231652.xyz'
+# 视频等大文件不进 Git，由本脚本用 SSH 直接传到服务器的这个目录，
+# 再由 Nginx 单独映射。理由见 Vault 的 .gitignore：视频体积大，入库难管理。
+$MediaDir     = '/www/wwwroot/notes.231652.xyz-media'
 # =============================================================
 
 $ErrorActionPreference = 'Stop'
@@ -228,9 +231,26 @@ if ($SkipScan) {
 Write-Step '追踪笔记引用的附件'
 
 $noteExt   = @('.md')
+# 随内容一起进 Git 的附件（体积小，适合版本管理）
 $attachExt = @('.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp','.ico','.avif',
-               '.pdf','.mp4','.webm','.mov','.mp3','.wav','.ogg','.m4a','.flac',
+               '.pdf','.mp3','.wav','.ogg','.m4a','.flac',
                '.zip','.canvas','.excalidraw')
+# 视频不进 Git，直接传服务器。体积大，进 Git 会让仓库持续膨胀，
+# 且 GitHub 单文件上限 100MB。这与 Vault 的 .gitignore 中「视频不入库」一致。
+$videoExt  = @('.mp4','.webm','.mov','.avi','.mkv','.m4v','.flv','.wmv','.mpg','.mpeg')
+
+# 复刻 Quartz 的文件名转换规则（@quartz-community/utils 的 slugifyFilePath）。
+# 必须与它完全一致，否则页面里的链接会指向一个不存在的文件名。
+function ConvertTo-QuartzSlug {
+    param([string]$Name)
+    $n = $Name -replace '\s', '-'
+    $n = $n -replace '&', '-and-'
+    $n = $n -replace '%', '-percent'
+    $n = $n -replace '\?', ''
+    $n = $n -replace '#', ''
+    $n = $n -replace '[<>:"|*]', ''
+    return $n.ToLower()
+}
 
 # 建立 Vault 全量文件索引（按小写文件名分组），用于按名查找附件
 $vaultFiles = @{}
@@ -243,6 +263,7 @@ Get-ChildItem -LiteralPath $VaultPath -Recurse -File -ErrorAction SilentlyContin
     }
 
 $wanted     = @{}   # 需要复制的附件： 目标相对路径 -> 源 FileInfo
+$videos     = @{}   # 需要上传的视频： 服务器上的文件名 -> 源 FileInfo
 $missingRef = @()   # 找不到的引用
 $outsideRef = @()   # 引用了公开目录之外的笔记（会变成死链）
 
@@ -287,7 +308,7 @@ foreach ($f in $mdFiles) {
         }
 
         # 附件类型：在 Vault 内定位实际文件
-        if ($attachExt -contains $ext) {
+        if (($attachExt -contains $ext) -or ($videoExt -contains $ext)) {
             $src = $null
             # 1) 相对笔记所在目录
             $p1 = Join-Path $f.DirectoryName $decoded
@@ -309,13 +330,20 @@ foreach ($f in $mdFiles) {
             }
 
             if ($src) {
-                # 公开目录内的附件保持原相对路径；目录外的统一收进 附件/
-                if ($src.FullName.StartsWith($PublicPath)) {
-                    $dest = $src.FullName.Substring($PublicPath.Length).TrimStart('\')
+                if ($videoExt -contains $ext) {
+                    # 视频不进 content/。Quartz 解析不到文件时，会退回到把链接
+                    # 指向站点根目录（实测：../../附件/x.mp4 变成 ../../x.mp4），
+                    # 所以服务器上按「根目录 + Quartz 转换后的文件名」平铺存放。
+                    $videos[(ConvertTo-QuartzSlug $src.Name)] = $src
                 } else {
-                    $dest = Join-Path $AttachDirName $src.Name
+                    # 公开目录内的附件保持原相对路径；目录外的统一收进 附件/
+                    if ($src.FullName.StartsWith($PublicPath)) {
+                        $dest = $src.FullName.Substring($PublicPath.Length).TrimStart('\')
+                    } else {
+                        $dest = Join-Path $AttachDirName $src.Name
+                    }
+                    $wanted[$dest] = $src
                 }
-                $wanted[$dest] = $src
             } else {
                 $missingRef += [pscustomobject]@{ Note = $relNote; Ref = $ref }
             }
@@ -324,6 +352,10 @@ foreach ($f in $mdFiles) {
 }
 
 Write-Ok "需要同步 $($wanted.Count) 个附件"
+if ($videos.Count -gt 0) {
+    $vSize = ($videos.Values | Measure-Object -Property Length -Sum).Sum
+    Write-Ok ("发现 {0} 个视频，共 {1:N1} MB（不进 Git，稍后直接传服务器）" -f $videos.Count, ($vSize / 1MB))
+}
 if ($missingRef.Count -gt 0) {
     Write-Warn2 "$($missingRef.Count) 处引用找不到对应文件（发布后会显示为破损链接）："
     $missingRef | Select-Object -First 10 | ForEach-Object { Write-Info "$($_.Note) -> $($_.Ref)" }
@@ -441,10 +473,50 @@ finally {
     Pop-Location
 }
 
-# ===================== 7. 触发服务器部署 =====================
+# ===================== 7. 上传视频 =====================
+# 视频绕开 Git 直接传服务器。放在部署之前，保证网站切换到新版本时视频已就位。
+if ($videos.Count -gt 0 -and -not $NoDeploy) {
+    Write-Step '上传视频'
+
+    if (-not (Test-Path -LiteralPath $SshKey)) { Abort "找不到 SSH 私钥：$SshKey" }
+
+    # 先取服务器上已有视频的大小，大小一致就认为没变，避免每次重传几十 MB
+    $remoteSize = @{}
+    $lsOut = & ssh -i $SshKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 $SshTarget `
+        "mkdir -p '$MediaDir' && find '$MediaDir' -maxdepth 1 -type f -printf '%s %f\n' 2>/dev/null"
+    if ($LASTEXITCODE -ne 0) { Abort '无法连接服务器或创建媒体目录' }
+    foreach ($line in @($lsOut)) {
+        if ("$line" -match '^\s*(\d+)\s+(.+?)\s*$') { $remoteSize[$matches[2]] = [long]$matches[1] }
+    }
+
+    $toUpload = @()
+    foreach ($v in $videos.GetEnumerator()) {
+        if ($remoteSize.ContainsKey($v.Key) -and $remoteSize[$v.Key] -eq $v.Value.Length) {
+            Write-Info "已是最新，跳过：$($v.Key)"
+        } else {
+            $toUpload += $v
+        }
+    }
+
+    if ($toUpload.Count -eq 0) {
+        Write-Ok '所有视频均已是最新'
+    } else {
+        foreach ($v in $toUpload) {
+            $mb = [math]::Round($v.Value.Length / 1MB, 1)
+            Write-Info "上传 $($v.Key)（$mb MB），大文件请耐心等待…"
+            & scp -i $SshKey -o StrictHostKeyChecking=accept-new $v.Value.FullName "${SshTarget}:${MediaDir}/$($v.Key)"
+            if ($LASTEXITCODE -ne 0) { Abort "视频上传失败：$($v.Key)" }
+        }
+        & ssh -i $SshKey $SshTarget "chown -R www:www '$MediaDir'; chmod 755 '$MediaDir'; find '$MediaDir' -type f -exec chmod 644 {} +"
+        Write-Ok "已上传 $($toUpload.Count) 个视频"
+    }
+}
+
+# ===================== 8. 触发服务器部署 =====================
 if ($NoDeploy) {
     Write-Step '跳过部署'
     Write-Warn2 '已指定 -NoDeploy，服务器不会自动更新'
+    if ($videos.Count -gt 0) { Write-Warn2 '视频也未上传（上传需要连接服务器）' }
     Write-Host ''
     exit 0
 }

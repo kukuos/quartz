@@ -47,3 +47,18 @@ credentials.*
 secrets.yml
 secrets.yaml
 secrets.json
+
+# ---- 视频不入库 ----
+# 与 Obsidian Vault 的 .gitignore 保持一致：视频体积大，进仓库会持续膨胀，
+# GitHub 单文件上限 100MB。视频由 publish.ps1 通过 SSH 直传服务器媒体目录，
+# 再由 Nginx 单独映射，网站上照常播放。
+content/**/*.mp4
+content/**/*.webm
+content/**/*.mov
+content/**/*.avi
+content/**/*.mkv
+content/**/*.m4v
+content/**/*.flv
+content/**/*.wmv
+content/**/*.mpg
+content/**/*.mpeg
