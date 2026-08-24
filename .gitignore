@@ -1,5 +1,4 @@
 .DS_Store
-.gitignore
 node_modules
 public
 prof
@@ -12,3 +11,39 @@ replit.nix
 .quartz/
 quartz/cli/tui/dist/
 .turbo/
+
+# ---- 部署产物（服务器端生成，不入库） ----
+logs/
+backups/
+.deploy.lock
+*.building/
+*.prev/
+
+# ---- 敏感文件兜底 ----
+# publish.ps1 已经会扫描并拦截，这里是 Git 层的最后一道防线：
+# 即使这些文件被放进 content/，也不会被提交。
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+*.ppk
+*.keystore
+*.jks
+*.kdbx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+id_ecdsa
+id_ecdsa.*
+.htpasswd
+.netrc
+# 只忽略内容目录里的 .npmrc；项目根的 .npmrc 是 Quartz 构建配置，必须保留
+content/**/.npmrc
+credentials
+credentials.*
+secrets.yml
+secrets.yaml
+secrets.json

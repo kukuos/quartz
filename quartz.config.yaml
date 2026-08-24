@@ -1,0 +1,333 @@
+# yaml-language-server: $schema=./quartz/plugins/quartz-plugins.schema.json
+# ============================================================
+# Quartz 5 配置 —— notes.231652.xyz
+# 内容来源：Obsidian Vault/公共/  （由 publish.ps1 同步到 content/）
+# ============================================================
+configuration:
+  # 站点标题，显示在左上角和浏览器标签页。想改名字改这里。
+  pageTitle: 我的知识库
+  pageTitleSuffix: ""
+  enableSPA: true
+  enablePopovers: true
+  # 界面语言：中文。影响「搜索」「反向链接」「关系图谱」等界面文案。
+  locale: zh-CN
+  # 站点域名，不带协议前缀。影响 sitemap、RSS、OpenGraph 中的绝对链接。
+  baseUrl: notes.231652.xyz
+  # 不接入任何第三方统计，保持零外部 JS。
+  analytics:
+    provider: null
+  # 即使误同步进 content/，这些目录也不会被构建。属于第二道保险。
+  ignorePatterns:
+    - private
+    - templates
+    - 模板
+    - .obsidian
+    - .trash
+  theme:
+    # local = 不加载 Google Fonts。中文回退到 system-ui（Windows 微软雅黑 /
+    # macOS 苹方 / Android Noto Sans CJK），显示效果最好且零外部请求。
+    # 想用 Google Fonts 改成 googleFonts 并把 cdnCaching 设为 true。
+    fontOrigin: local
+    cdnCaching: false
+    typography:
+      header: Schibsted Grotesk
+      body: Source Sans Pro
+      code: IBM Plex Mono
+    colors:
+      lightMode:
+        light: "#faf8f8"
+        lightgray: "#e5e5e5"
+        gray: "#b8b8b8"
+        darkgray: "#4e4e4e"
+        dark: "#2b2b2b"
+        secondary: "#284b63"
+        tertiary: "#84a59d"
+        highlight: rgba(143, 159, 169, 0.15)
+        textHighlight: "#fff23688"
+      darkMode:
+        light: "#161618"
+        lightgray: "#393639"
+        gray: "#646464"
+        darkgray: "#d4d4d4"
+        dark: "#ebebec"
+        secondary: "#7b97aa"
+        tertiary: "#84a59d"
+        highlight: rgba(143, 159, 169, 0.15)
+        textHighlight: "#b3aa0288"
+plugins:
+  # ---------- 内容解析 ----------
+  - source: "@quartz-community/created-modified-date"
+    enabled: true
+    options:
+      defaultDateType: modified
+      # frontmatter 的 created/updated 优先；没写则用 git 提交时间；再没有用文件时间。
+      priority:
+        - frontmatter
+        - git
+        - filesystem
+    order: 10
+  - source: "@quartz-community/syntax-highlighting"
+    enabled: true
+    options:
+      theme:
+        light: github-light
+        dark: github-dark
+      keepBackground: false
+    order: 20
+  # Obsidian 语法核心：WikiLink、别名链接、嵌入、Callout、高亮、脚注、Mermaid。
+  # 这是 Obsidian 兼容性的关键插件。
+  - source: "@quartz-community/obsidian-flavored-markdown"
+    enabled: true
+    options:
+      enableInHtmlEmbed: false
+      enableCheckbox: true
+    order: 30
+  # GitHub 风格 Markdown：表格、删除线、任务列表、自动链接。
+  - source: "@quartz-community/github-flavored-markdown"
+    enabled: true
+    order: 40
+  - source: "@quartz-community/table-of-contents"
+    enabled: true
+    order: 50
+    layout:
+      position: right
+      priority: 30
+  # shortest：只写文件名的链接会在整个 content/ 里按最短唯一名匹配，
+  # 同时兼容带目录路径的写法。Obsidian 用户最常用的模式。
+  - source: "@quartz-community/crawl-links"
+    enabled: true
+    options:
+      markdownLinkResolution: shortest
+    order: 60
+  # 没写 description 时自动从正文首段提取，用于 SEO 和搜索预览。
+  - source: "@quartz-community/description"
+    enabled: true
+    order: 70
+  - source: "@quartz-community/latex"
+    enabled: true
+    options:
+      renderEngine: katex
+    order: 80
+  - source: "@quartz-community/citations"
+    enabled: false
+    order: 85
+  - source: "@quartz-community/hard-line-breaks"
+    enabled: false
+    order: 90
+  - source: "@quartz-community/ox-hugo"
+    enabled: false
+    order: 91
+  - source: "@quartz-community/roam"
+    enabled: false
+    order: 92
+  - source: "@quartz-community/quartz-fonts"
+    enabled: true
+  - source: "@quartz-themes/core"
+    enabled: false
+    options:
+      theme: tokyo-night
+      mode: both
+  # ---------- 发布过滤 ----------
+  # frontmatter 写 draft: true 的笔记不会发布。注意：status: draft 不受影响。
+  - source: "@quartz-community/remove-draft"
+    enabled: true
+  # 关闭：开启后每篇都必须写 publish: true 才发布，会打断 Obsidian 写作体验。
+  # 本方案靠「只同步 公共/ 目录」来控制发布范围，已经足够。
+  - source: "@quartz-community/explicit-publish"
+    enabled: false
+  # frontmatter 的 aliases 会生成跳转页，改标题后旧链接不会失效。
+  - source: "@quartz-community/alias-redirects"
+    enabled: true
+  # ---------- SEO / 订阅 ----------
+  # 自动生成 sitemap.xml 和 index.xml（RSS）。
+  - source: "@quartz-community/content-index"
+    enabled: true
+    options:
+      enableSiteMap: true
+      enableRSS: true
+  - source: "@quartz-community/favicon"
+    enabled: true
+  # 自动生成社交分享大图（OpenGraph）。
+  - source: "@quartz-community/og-image"
+    enabled: true
+  # 关闭：CNAME 文件只有 GitHub Pages 需要，我们用自己的 Nginx。
+  - source: "@quartz-community/cname"
+    enabled: false
+  # ---------- 页面类型 ----------
+  - source: "@quartz-community/canvas-page"
+    enabled: true
+  - source: "@quartz-community/content-page"
+    enabled: true
+  # 目录页：访问某个目录时列出该目录下所有笔记。
+  - source: "@quartz-community/folder-page"
+    enabled: true
+  # 标签页：访问 /tags/ 下的标签时列出该标签的所有笔记。
+  - source: "@quartz-community/tag-page"
+    enabled: true
+  - source: "@quartz-community/bases-page"
+    enabled: true
+    options: {}
+    order: 50
+  # ---------- 界面组件 ----------
+  # 左侧文件夹导航树。
+  - source: "@quartz-community/explorer"
+    enabled: true
+    layout:
+      position: left
+      priority: 50
+  # 右侧关系图谱。
+  - source: "@quartz-community/graph"
+    enabled: true
+    layout:
+      position: right
+      priority: 10
+  # 全文搜索，快捷键 Ctrl/Cmd + K。
+  - source: "@quartz-community/search"
+    enabled: true
+    layout:
+      position: left
+      priority: 20
+      group: toolbar
+      groupOptions:
+        grow: true
+  # 反向链接：显示哪些笔记链接到了当前页。
+  - source: "@quartz-community/backlinks"
+    enabled: true
+    layout:
+      position: right
+      priority: 50
+  # 最近更新的笔记列表。
+  - source: "@quartz-community/recent-notes"
+    enabled: true
+    layout:
+      position: right
+      priority: 40
+  - source: "@quartz-community/article-title"
+    enabled: true
+    layout:
+      position: beforeBody
+      priority: 10
+  # 显示创建/修改时间和阅读时长。
+  - source: "@quartz-community/content-meta"
+    enabled: true
+    layout:
+      position: beforeBody
+      priority: 20
+  # 在正文上方显示标签，方便点击跳转标签页。
+  - source: "@quartz-community/tag-list"
+    enabled: true
+    layout:
+      position: beforeBody
+      priority: 30
+  - source: "@quartz-community/page-title"
+    enabled: true
+    layout:
+      position: left
+      priority: 10
+  # 深色/浅色模式切换。
+  - source: "@quartz-community/darkmode"
+    enabled: true
+    layout:
+      position: left
+      priority: 30
+      group: toolbar
+  - source: "@quartz-community/reader-mode"
+    enabled: true
+    layout:
+      position: left
+      priority: 35
+      group: toolbar
+  # 面包屑导航。
+  - source: "@quartz-community/breadcrumbs"
+    enabled: true
+    layout:
+      position: beforeBody
+      priority: 5
+      condition: not-index
+  # 关闭：评论需要接入 giscus 等第三方服务。
+  - source: "@quartz-community/comments"
+    enabled: false
+    options:
+      provider: giscus
+      options: {}
+    layout:
+      position: afterBody
+      priority: 10
+  - source: "@quartz-community/footer"
+    enabled: true
+    options:
+      links:
+        RSS 订阅: https://notes.231652.xyz/index.xml
+    layout:
+      position: footer
+      priority: 50
+  - source: "@quartz-community/spacer"
+    enabled: true
+    options: {}
+    order: 25
+    layout:
+      position: left
+      priority: 25
+      display: mobile-only
+  # frontmatter 属性表格。includeAll: false 表示只显示下面列出的字段，
+  # 避免把 created/updated/status 等内部字段全部暴露在页面顶部。
+  - source: "@quartz-community/note-properties"
+    enabled: true
+    options:
+      includeAll: false
+      includedProperties:
+        - description
+        - tags
+        - aliases
+      excludedProperties: []
+      hidePropertiesView: false
+      delimiters: ---
+      language: yaml
+    order: 5
+    layout:
+      position: beforeBody
+      priority: 15
+      display: all
+  - source: "@quartz-community/unlisted-pages"
+    enabled: true
+    options: {}
+    order: 45
+  - source: "@quartz-community/encrypted-pages"
+    enabled: true
+    options:
+      iterations: 600000
+      passwordField: password
+      unlistWhenEncrypted: false
+      outputPath: static/encryptedContentIndex.json
+    order: 900
+  - source: "@quartz-community/stacked-pages"
+    enabled: false
+    layout:
+      position: afterBody
+      priority: 50
+      display: all
+layout:
+  groups:
+    toolbar:
+      priority: 35
+      direction: row
+      gap: 0.5rem
+  byPageType:
+    "404":
+      positions:
+        beforeBody: []
+        left: []
+        right: []
+    content: {}
+    folder:
+      exclude:
+        - reader-mode
+      positions:
+        right: []
+    tag:
+      exclude:
+        - reader-mode
+      positions:
+        right: []
+    canvas: {}
+    bases: {}
