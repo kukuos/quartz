@@ -192,6 +192,18 @@ cd C:\Users\Administrator\Documents\xm\Quartz-obsidian
 | `.\publish.ps1 -NoDeploy` | 只推送到 GitHub，不触发服务器构建 |
 | `.\publish.ps1 -SkipScan` | 跳过敏感信息扫描（确认是误报时才用） |
 
+### 发布后自查
+
+`verify.sh` 会跑 46 项检查，涵盖页面可访问、私人内容未泄露、WikiLink、图片、
+中文支持、移动端、HTTPS 证书、SEO、敏感路径防护、缓存压缩：
+
+```bash
+ssh -i "C:\Users\Administrator\.ssh\root-tw_id_ed25519" root@43.212.212.75 \
+    "bash /www/app/quartz/verify.sh"
+```
+
+证书还没就绪时可以只测 HTTP：`bash /www/app/quartz/verify.sh --http`
+
 ---
 
 ## 服务器部署
@@ -224,33 +236,45 @@ tail -50 /www/app/quartz/logs/deploy.log
 
 配置文件见本目录的 [`nginx.conf`](nginx.conf)，已针对本站点写好注释。
 
-### 在宝塔面板配置
+### 当前状态：已配置完成
 
-> **顺序不能颠倒。** `nginx.conf` 里引用了宝塔在申请证书时才会生成的
-> `well-known` 验证配置，没申请证书就先替换配置，`nginx -t` 会因为找不到
-> 文件而报错。
+站点已在宝塔面板建好，Let's Encrypt 证书已签发（有效期至 2026-11-22，
+自动续期由宝塔管理），[`nginx.conf`](nginx.conf) 已应用到：
 
-1. **网站 → 添加站点**
-   - 域名：`notes.231652.xyz`
-   - 根目录：`/www/wwwroot/notes.231652.xyz`
-   - PHP 版本：**纯静态**
-   - 建完这一步，`http://notes.231652.xyz` 应该已经能打开
+```
+/www/server/panel/vhost/nginx/notes.231652.xyz.conf
+```
 
-2. **站点设置 → SSL → Let's Encrypt**
-   - 勾选域名，点击申请
-   - 申请成功后打开 **强制 HTTPS**
-   - 宝塔会自动配置续期，不需要手动装 certbot
+每次修改配置前都会自动备份为 `.conf.bak-<时间戳>`，同目录下可以找到。
 
-3. **站点设置 → 配置文件** → 用 [`nginx.conf`](nginx.conf) 的内容替换
-   - **`#SSL-START` 到 `#SSL-END` 之间，请保留你面板里原有的那一段**，
-     不要用文件里的版本覆盖——证书路径以面板生成的为准
-   - 保存时宝塔会自动执行 `nginx -t` 并 reload
-   - 万一报错，点「回退」恢复上一版配置，网站不会中断
+### 要改配置的话
 
-4. 建站时宝塔可能往站点目录放了默认首页，**重新部署一次**覆盖掉：
-   ```bash
-   bash /www/app/quartz/deploy.sh
+在宝塔面板「站点设置 → 配置文件」里改，保存时面板会自动 `nginx -t` 并 reload；
+报错就点「回退」。或者用命令行改完后：
+
+```bash
+nginx -t && nginx -s reload
+```
+
+### 配置里有两个 nginx 语法坑，改动时注意
+
+1. **正则里出现 `{` `}` 必须用双引号把整个正则括起来**，否则 nginx 会把花括号
+   当成配置块的括号，报 `unknown directive`：
+   ```nginx
+   location ~* "^/(index|component)-[0-9a-f]{6,}\.(js|css)$" {   # 引号不能省
    ```
+
+2. **子块里一旦写了 `add_header`，父块的 `add_header` 就全部不再继承**。
+   所以设置缓存时优先用 `expires` 指令；确实需要 `add_header` 的地方
+   （比如 `immutable`），要把安全响应头重新写一遍。
+
+### 另外两点说明
+
+- **`charset_types` 不要写 `text/html`**：nginx 默认已包含，重复会产生告警。
+- **响应头里的 `set-cookie: server_session_...`** 来自宝塔的全局模块，不是本
+  站点配置产生的。纯静态站点其实不需要它，它还会降低 CDN 缓存效率。
+  介意的话可以在宝塔面板里关掉相关模块，但那是全局设置，会影响服务器上
+  其他 18 个站点，改前先确认。
 
 ### 配置要点
 
@@ -495,6 +519,29 @@ git checkout -- package.json package-lock.json   # deploy.sh 已自动处理这�
 2. 文件名拼写不一致（大小写、空格、全角半角）
 3. 同名笔记有多篇，`shortest` 模式无法确定目标 —— 改用带路径的写法 `[[目录/笔记名]]`
 
+### 中文搜索搜不到预期结果
+
+这是 Quartz 上游的限制，不是配置问题，说明一下原理以便理解它的边界。
+
+搜索用的是 FlexSearch，分词规则为「按非字母数字字符切分 + 前缀匹配」。
+中文汉字都属于「字母」类，中间又没有空格，所以**一整段连续的中文会被当成
+一个词**，只能从头开始匹配：
+
+| 笔记里的内容 | 搜「Docker」 | 搜「部署」 |
+| ---- | ---- | ---- |
+| `Docker部署教程`（连写） | ✓ 命中 | ✗ 搜不到 |
+| `Docker 部署教程`（有空格） | ✓ 命中 | ✓ 命中 |
+
+实际影响没有想象中大——中文写作里逗号、句号、空格本来就很多，
+被切出的词不会太长。想让搜索更好用可以：
+
+- 标题和小标题里适当用空格或标点分隔关键词
+- 在 frontmatter 的 `tags` 和 `aliases` 里补上常用检索词，这些字段同样进索引
+- 需要精确检索时，用浏览器的页内查找（`Ctrl + F`）
+
+要彻底解决需要引入中文分词（如 jieba）并改造搜索插件，属于较大改动，
+且会明显增加索引体积，个人知识库一般不值得。
+
 ### Nginx 报 404
 
 - 检查网址形式：应该是 `/docker` 而不是 `/docker.html` 或 `/Docker/`
@@ -523,6 +570,28 @@ nslookup notes.231652.xyz 223.5.5.5
 3. 确认笔记在 `公共/` 目录内
 4. 确认 frontmatter 里没写 `draft: true`
 5. 手机上看不到更新时，尝试无痕模式排除缓存
+
+---
+
+## 附录：清理验收测试文件
+
+搭建时创建了几个测试文件，确认网站一切正常后可以删掉。它们都留在原地
+没有自动删除，因为在 Vault 里删文件应该由你决定。
+
+| 文件 | 作用 |
+| ---- | ---- |
+| `Obsidian Vault\公共\Test.md` | 验证 WikiLink、图片、Callout、代码块 |
+| `Obsidian Vault\公共\中文标题测试.md` | 验证中文标题、中文 URL、中文标签 |
+| `Obsidian Vault\私人测试\Test Private.md` | 验证私人内容不外泄 |
+| `Obsidian Vault\附件\test.png` | 测试用图片（是已有图片的副本） |
+
+在 Obsidian 里直接删除前三个，然后执行 `.\publish.ps1`，网站上对应页面就会消失
+（`content/` 是镜像同步的，Vault 里删掉的笔记网站上也会删掉）。
+
+> `verify.sh` 的部分检查依赖 `Test.md` 和 `test.png`，删除后重跑会有几项失败，
+> 这是正常的——那时它的价值主要在证书、SEO、敏感路径防护这些与内容无关的检查上。
+
+保留 `公共\index.md` 作为网站首页。
 
 ---
 
