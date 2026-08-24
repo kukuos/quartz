@@ -133,6 +133,16 @@ fi
 BUILD_END=$(date +%s)
 ok "构建耗时 $((BUILD_END - BUILD_START)) 秒"
 
+# Quartz 不生成 robots.txt，这里补上并指向 sitemap。
+# 放在构建产物里而不是 Vault 里，避免在 Obsidian 中看到一个无关文件。
+cat > "${BUILD_DIR}/robots.txt" <<'ROBOTS'
+User-agent: *
+Allow: /
+
+Sitemap: https://notes.231652.xyz/sitemap.xml
+ROBOTS
+ok "已生成 robots.txt"
+
 # ---------------- 4. 校验产物 ----------------
 log "[4/6] 校验构建产物"
 

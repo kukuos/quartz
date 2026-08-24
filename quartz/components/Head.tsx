@@ -86,6 +86,9 @@ export default (() => {
             <meta property="twitter:domain" content={cfg.baseUrl}></meta>
             <meta property="og:url" content={socialUrl}></meta>
             <meta property="twitter:url" content={socialUrl}></meta>
+            {/* 规范链接：告诉搜索引擎本页的唯一正式地址，避免大小写、
+                尾部斜杠等变体被当成重复内容。upstream 尚未内置。 */}
+            <link rel="canonical" href={socialUrl} />
           </>
         )}
 
