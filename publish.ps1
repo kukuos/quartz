@@ -375,11 +375,16 @@ Write-Step 'Git 变更检查'
 
 Push-Location $QuartzRepo
 try {
+    # 注意：不要对 git 使用 2>&1 重定向。Windows PowerShell 5.1 会把原生程序的
+    # stderr 每一行包装成 ErrorRecord，导致 git 明明成功却被判定为失败。
+    # 这里一律让 git 直接输出，只用 $LASTEXITCODE 判断成败。
+
     # 只暂存 content/，绝不 git add .
-    & git add --all -- content 2>&1 | Out-Null
+    & git add --all -- content
     if ($LASTEXITCODE -ne 0) { Abort 'git add 失败' }
 
-    $staged = & git diff --cached --name-status -- content
+    # core.quotepath=false：让中文文件名正常显示，而不是八进制转义
+    $staged = & git -c core.quotepath=false diff --cached --name-status -- content
     if (-not $staged) {
         Write-Ok '内容没有变化，无需发布'
         Write-Host ''
@@ -394,7 +399,9 @@ try {
     $added = 0; $modified = 0; $deleted = 0
     foreach ($line in $staged) {
         $parts = $line -split "`t", 2
-        $st = $parts[0]; $path = $parts[1] -replace '^content/', ''
+        $st = $parts[0]
+        # 含空格或中文的路径可能被 git 用引号包裹，去掉后再展示
+        $path = $parts[1].Trim('"') -replace '^content/', ''
         switch -Regex ($st) {
             '^A' { Write-Host "    + 新增  $path" -ForegroundColor Green;  $added++ }
             '^M' { Write-Host "    ~ 修改  $path" -ForegroundColor Yellow; $modified++ }
@@ -414,11 +421,12 @@ try {
         $Message = "发布内容更新（+$added ~$modified -$deleted） $stamp"
     }
 
-    & git commit -m $Message 2>&1 | Out-Null
+    & git commit -m $Message | Out-Null
     if ($LASTEXITCODE -ne 0) { Abort 'git commit 失败' }
     Write-Ok "已提交：$Message"
 
-    & git push origin HEAD 2>&1 | ForEach-Object { Write-Info $_ }
+    Write-Info '推送到 GitHub…'
+    & git push origin HEAD
     if ($LASTEXITCODE -ne 0) {
         Write-Err 'git push 失败。提交已保存在本地，修复网络或凭据后可重新运行本脚本。'
         Abort 'push 失败'
@@ -443,8 +451,9 @@ if (-not (Test-Path -LiteralPath $SshKey)) { Abort "找不到 SSH 私钥：$SshK
 if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) { Abort '未找到 ssh 命令' }
 
 Write-Info "连接 $SshTarget …"
-& ssh -i $SshKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 $SshTarget "bash $RemoteDeploy" 2>&1 |
-    ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+Write-Host ''
+# 同样不重定向 stderr：deploy.sh 的日志直接打到控制台，退出码单独判断
+& ssh -i $SshKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 $SshTarget "bash $RemoteDeploy"
 
 $deployCode = $LASTEXITCODE
 Write-Host ''
