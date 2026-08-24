@@ -59,9 +59,13 @@ function Write-Warn2 { param($m) Write-Host "  ! $m" -ForegroundColor Yellow }
 function Write-Err   { param($m) Write-Host "  ✗ $m" -ForegroundColor Red }
 function Write-Info  { param($m) Write-Host "    $m" -ForegroundColor DarkGray }
 
-# 双击 .bat 运行时暂停，让用户看清结果；非交互环境下静默跳过
+# 直接运行本脚本时暂停，让用户看清结果。
+#   PUBLISH_FROM_BAT：由「发布到知识库.bat」设置，那边结尾已有 pause，
+#                     这里再停一次就得按两回车，所以跳过。
+#   CI：自动化调用，不暂停。
+# Read-Host 在非交互环境（如后台调用）会抛异常，用 try/catch 兜住。
 function Wait-Exit {
-    if ($env:CI) { return }
+    if ($env:CI -or $env:PUBLISH_FROM_BAT) { return }
     try { Read-Host '按回车键退出' | Out-Null } catch { }
 }
 
