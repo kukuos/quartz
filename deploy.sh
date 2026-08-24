@@ -18,7 +18,6 @@ BACKUP_DIR="${APP_DIR}/backups"                    # 历史快照（硬链接，
 LOG_DIR="${APP_DIR}/logs"
 LOG_FILE="${LOG_DIR}/deploy.log"
 LOCK_FILE="${APP_DIR}/.deploy.lock"
-GIT_BRANCH="main"
 KEEP_BACKUPS=3
 MIN_FILES=10                                       # 产物文件数下限，低于此值视为构建异常
 NGINX_USER="www"
@@ -61,6 +60,14 @@ fi
 
 log "════════════════ 开始部署 ════════════════"
 cd "$APP_DIR"
+
+# 跟踪当前所在分支（本仓库默认分支是 v5），换分支后无需修改脚本
+GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ -z "$GIT_BRANCH" ] || [ "$GIT_BRANCH" = "HEAD" ]; then
+    err "当前处于游离 HEAD 状态，无法确定要拉取的分支"
+    exit 1
+fi
+log "  分支：${GIT_BRANCH}"
 
 # ---------------- 1. 拉取最新内容 ----------------
 log "[1/6] 拉取 Git 最新内容"
