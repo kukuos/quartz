@@ -1,5 +1,4 @@
 ---
-password: "123"
 title: windows登录页“轻松使用”换成CMD命令行窗口修改密码
 ---
 ##
