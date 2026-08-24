@@ -32,24 +32,36 @@ ok()   { echo "[$(ts)]   ✓ $*" | tee -a "$LOG_FILE"; }
 warn() { echo "[$(ts)]   ! $*" | tee -a "$LOG_FILE"; }
 err()  { echo "[$(ts)]   ✗ $*" | tee -a "$LOG_FILE" >&2; }
 
-# 任何一步出错都走这里：清理中转目录，线上目录原封不动
-on_error() {
+# 失败处理分两步：
+#   ERR trap 只负责记住出错行号（它捕捉不到显式的 exit）；
+#   EXIT trap 统一善后，这样无论是命令失败、主动 exit 还是被中断，
+#   中转目录都会被清理、提示都会打印。
+FAILED_LINE=""
+trap 'FAILED_LINE=$LINENO' ERR
+
+on_exit() {
     local code=$?
-    local line=${1:-?}
-    err "部署失败（第 ${line} 行，退出码 ${code}）"
+    [ "$code" -eq 0 ] && return 0
+
+    if [ -n "$FAILED_LINE" ]; then
+        err "部署失败（第 ${FAILED_LINE} 行，退出码 ${code}）"
+    else
+        err "部署失败（退出码 ${code}）"
+    fi
+
     if [ -d "$BUILD_DIR" ]; then
         rm -rf "$BUILD_DIR"
         warn "已清理构建中转目录"
     fi
+
     if [ -d "$SITE_DIR" ]; then
         warn "线上网站未受影响，仍在正常服务：https://notes.231652.xyz"
     else
         warn "线上目录尚不存在，这是首次部署未完成"
     fi
     log "──────────────── 部署结束（失败） ────────────────"
-    exit "$code"
 }
-trap 'on_error $LINENO' ERR
+trap on_exit EXIT
 
 # ---------------- 并发锁 ----------------
 exec 200>"$LOCK_FILE"
@@ -176,6 +188,17 @@ if [ "$INDEX_SIZE" -lt 512 ]; then
 fi
 
 ok "产物校验通过：${FILE_COUNT} 个文件，$(du -sh "$BUILD_DIR" | cut -f1)"
+
+# Quartz 遇到加载不了的插件时只警告、不报错，构建仍会「成功」但页面可能残缺。
+# 因此再比一次页面数：骤降时提醒，但不阻断——正常删除笔记也会让页面变少。
+if [ -d "$SITE_DIR" ]; then
+    OLD_PAGES=$(find "$SITE_DIR" -name '*.html' -type f | wc -l)
+    NEW_PAGES=$(find "$BUILD_DIR" -name '*.html' -type f | wc -l)
+    if [ "$OLD_PAGES" -gt 4 ] && [ "$NEW_PAGES" -lt "$((OLD_PAGES / 2))" ]; then
+        warn "页面数从 ${OLD_PAGES} 降到 ${NEW_PAGES}（降幅过半），请确认是否符合预期"
+        warn "若不符合预期，可执行 bash ${APP_DIR}/rollback.sh 回滚"
+    fi
+fi
 
 # ---------------- 5. 原子切换 ----------------
 log "[5/6] 切换线上目录"
