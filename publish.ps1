@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     把 Obsidian Vault 中「公共」目录的笔记发布到 https://notes.231652.xyz
 
@@ -59,6 +59,12 @@ function Write-Warn2 { param($m) Write-Host "  ! $m" -ForegroundColor Yellow }
 function Write-Err   { param($m) Write-Host "  ✗ $m" -ForegroundColor Red }
 function Write-Info  { param($m) Write-Host "    $m" -ForegroundColor DarkGray }
 
+# 双击 .bat 运行时暂停，让用户看清结果；非交互环境下静默跳过
+function Wait-Exit {
+    if ($env:CI) { return }
+    try { Read-Host '按回车键退出' | Out-Null } catch { }
+}
+
 function Abort {
     param($m)
     Write-Host ''
@@ -66,9 +72,7 @@ function Abort {
     Write-Host " 发布已中止：$m" -ForegroundColor Red
     Write-Host "═══════════════════════════════════════════" -ForegroundColor Red
     Write-Host ''
-    if ($Host.Name -eq 'ConsoleHost' -and -not $env:CI) {
-        Read-Host '按回车键退出'
-    }
+    Wait-Exit
     exit 1
 }
 
@@ -381,7 +385,7 @@ try {
         Write-Host ''
         Write-Host "  网站保持不变：$SiteUrl" -ForegroundColor Cyan
         Write-Host ''
-        if ($Host.Name -eq 'ConsoleHost' -and -not $env:CI) { Read-Host '按回车键退出' }
+        Wait-Exit
         exit 0
     }
 
@@ -465,5 +469,5 @@ if ($deployCode -eq 0) {
 }
 
 Write-Host ''
-if ($Host.Name -eq 'ConsoleHost' -and -not $env:CI) { Read-Host '按回车键退出' }
+Wait-Exit
 exit $deployCode
