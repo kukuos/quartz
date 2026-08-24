@@ -271,6 +271,7 @@ $wanted     = @{}   # 需要复制的附件： 目标相对路径 -> 源 FileInf
 $videos     = @{}   # 需要上传的视频： 服务器上的文件名 -> 源 FileInfo
 $missingRef = @()   # 找不到的引用
 $outsideRef = @()   # 引用了公开目录之外的笔记（会变成死链）
+$badRef     = @()   # 解析时报错的引用（含路径非法字符等）
 
 foreach ($f in $mdFiles) {
     $relNote = $f.FullName.Substring($PublicPath.Length).TrimStart('\')
@@ -297,13 +298,19 @@ foreach ($f in $mdFiles) {
         # 跳过外链和锚点
         if ($ref -match '^(https?:|mailto:|tel:|data:|#|/)') { continue }
 
+      try {
         $decoded = [uri]::UnescapeDataString($ref)
-        $ext = [IO.Path]::GetExtension($decoded).ToLower()
+        # 用正则取扩展名，不能用 [IO.Path]::GetExtension：
+        # 笔记里完全可能出现带半角引号之类的链接（例如 [[某页"标题"某页]]），
+        # 而 " < > | 等是 Windows 路径非法字符，.NET Framework 下该方法会直接抛异常，
+        # 整个发布就中断了。正则只认最后一段扩展名，遇到什么字符都不会炸。
+        $ext = ''
+        if ($decoded -match '(\.[A-Za-z0-9]{1,8})$') { $ext = $matches[1].ToLower() }
 
         # 无扩展名或 .md：这是笔记链接
         if ($ext -eq '' -or $noteExt -contains $ext) {
             $target = if ($ext -eq '') { "$decoded.md" } else { $decoded }
-            $leaf = [IO.Path]::GetFileName($target)
+            $leaf = ($target -split '[\\/]')[-1]
             # 公开目录里存在同名笔记就没问题（shortest 模式能解析）
             $inPublic = $mdFiles | Where-Object { $_.Name -ieq $leaf }
             if (-not $inPublic) {
@@ -325,7 +332,7 @@ foreach ($f in $mdFiles) {
             }
             # 3) 全 Vault 按文件名查找（Obsidian 默认的短名嵌入）
             if (-not $src) {
-                $leaf = [IO.Path]::GetFileName($decoded).ToLower()
+                $leaf = (($decoded -split '[\\/]')[-1]).ToLower()
                 if ($vaultFiles.ContainsKey($leaf)) {
                     # 优先取公开目录里的同名文件
                     $cands = $vaultFiles[$leaf]
@@ -353,10 +360,19 @@ foreach ($f in $mdFiles) {
                 $missingRef += [pscustomobject]@{ Note = $relNote; Ref = $ref }
             }
         }
+      }
+      catch {
+        # 单个引用解析失败不该让整次发布中断，记下来最后统一提示即可
+        $badRef += [pscustomobject]@{ Note = $relNote; Ref = $ref; Reason = $_.Exception.Message }
+      }
     }
 }
 
 Write-Ok "需要同步 $($wanted.Count) 个附件"
+if ($badRef.Count -gt 0) {
+    Write-Warn2 "$($badRef.Count) 处引用无法解析（已跳过，不影响其他内容发布）："
+    $badRef | Select-Object -First 5 | ForEach-Object { Write-Info "$($_.Note) -> $($_.Ref)" }
+}
 if ($videos.Count -gt 0) {
     $vSize = ($videos.Values | Measure-Object -Property Length -Sum).Sum
     Write-Ok ("发现 {0} 个视频，共 {1:N1} MB（不进 Git，稍后直接传服务器）" -f $videos.Count, ($vSize / 1MB))
