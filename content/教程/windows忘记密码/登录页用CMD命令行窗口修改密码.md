@@ -19,10 +19,16 @@ title: windows登录页“轻松使用”换成CMD命令行窗口修改密码
 
 ## 第三步：备份并替换 utilman.exe
 先执行下面的命令备份复制文件，以防损坏文件时恢复。
-`copy C:\windows\system32\utilman.exe C:\Windows\system32\utilman.exe.bak`
+```bash
+copy C:\windows\system32\utilman.exe C:\Windows\system32\utilman.exe.bak
+```
+
 
 再执行这个命令，会出现Yes/No时输入"yes"回车
-`copy C:\windows\system32\cmd.exe C:\windows\system32\utilman.exe`
+```bash
+copy C:\windows\system32\cmd.exe C:\windows\system32\utilman.exe
+```
+
 
 下面是示例，成功会显示两个"已复制"
 ![[Pasted image 20260809020526.png|700]]
@@ -39,9 +45,15 @@ title: windows登录页“轻松使用”换成CMD命令行窗口修改密码
 ![[Pasted image 20260809021637.png]]
 
 输入命令
+```bash
 net localgroup administrators
+```
 
+
+```bash
 net user 要修改的用户名 *
+```
+
 注意这里的 “*” 是小写的，输入密码不会显示出密码，输完之后直接按回车在确认输入一遍密码回车确认。
 
 ## 第五步：用新密码登录
