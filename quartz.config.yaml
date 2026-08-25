@@ -175,9 +175,9 @@ plugins:
     layout:
       position: left
       priority: 50
-  # 右侧关系图谱。
+  # 右侧关系图谱。已关闭，想恢复把 enabled 改回 true。
   - source: "@quartz-community/graph"
-    enabled: true
+    enabled: false
     layout:
       position: right
       priority: 10
@@ -196,9 +196,9 @@ plugins:
     layout:
       position: right
       priority: 50
-  # 最近更新的笔记列表。
+  # 最近更新的笔记列表。已关闭，想恢复把 enabled 改回 true。
   - source: "@quartz-community/recent-notes"
-    enabled: true
+    enabled: false
     layout:
       position: right
       priority: 40
